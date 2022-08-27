@@ -22,8 +22,8 @@ P = 3;
 % the number of base function
 N = 2;
 % the smoothing factor
-w = 0.8;
-% w = 0.65
+% w = 0.8;
+w = 0.65;
 % the weighting matrix Gamma
 base_vector = ones(1, P);
 
@@ -155,11 +155,13 @@ IAE = zeros(iterK, 1);
 for i = 1 : T
     IAE(1, 1) = IAE(1, 1) + abs(c(i) - Yp(i, 1));
 end
+IAE(1)
 
 IACS = zeros(iterK, 1);
 for i = 1 : T
     IACS(1, 1) = IACS(1, 1) + abs(U(i, 1));
 end
+IACS(1)
 
 %% plot
 plot(1 : T, c, 'r');
