@@ -1,4 +1,6 @@
 clc;clear;close;
+%% PS
+% 第一次迭代中，体现出跟踪能力
 %% model information
 % the actual process model -- ss
 A = [1.582 -0.5916; 1 0];
@@ -12,7 +14,7 @@ D = 0;
 % total operating time
 T = 100;
 % the number of iteration
-k = 10;
+iterK = 10;
 % the setpoint: piecewise function
 c = ones(1, T);
 c(1, 1 : 49) = 15;
@@ -27,7 +29,6 @@ w = 0.8;
 base_vector = ones(1, P);
 % gamma = 1;
 % Gamma = diag(base_vector * gamma);
-
 gamma = diag(2,1);
 Gamma = GetDiagMarix(gamma, P);
 % the weighting matrix Lambda
@@ -38,108 +39,79 @@ beta = 0.01;
 Beta = diag(base_vector * beta);
 % the parameter tao
 tao = 1;
-
 %% extended state-space model's coefficient matrix
 Ae = [Am, 0; Cm * Am, 1];
 Be = [Bm; Cm * Bm];
 Ce = [0; -1];
-
 %% calculate predicton model's coefficient matrix
-[row_Ae, col_Ae] = size(Ae);
-
-baseMat = eye(row_Ae * P, col_Ae);
-for ii = 2 : P
-    baseMat((ii - 1) * row_Ae + 1: ii * row_Ae, :) ...
-        = baseMat((ii - 2) * row_Ae + 1 : (ii - 1) * row_Ae, :) * Ae;
-end
-% matrix theta
-theta = baseMat * Ae;
-
-% matrix Phi
-[row_Be, col_Be] = size(Be);
-Phi = zeros(row_Be * P, col_Be * P);
-for ii = 1 : P
-    Phi((ii - 1) * row_Be + 1 : row_Be * P, (ii - 1) * col_Be + 1 : ii * col_Be) ...
-        = baseMat(1 : (P - ii + 1) * row_Be, :) * Be;
-end
-% matrix kec
-[row_Ce, col_Ce] = size(Ce);
-kec = zeros(row_Ce * P, col_Ce * P);
-for ii = 1 : P
-    kec((ii - 1) * row_Ce + 1 : end, (ii - 1) * col_Ce + 1 : ii * col_Ce) ...
-        = baseMat(1 : (P - ii + 1) * row_Ce, :) * Ce;
-end
-
-% matrix theta_u
-theta_u = Phi(:, 1 : col_Be);
-
-% matrix H
-H = zeros(P, N);
-for ii = 0 : (P - 1)
-    H(ii + 1, :) = baseFunc(ii, N);
-end
-
-% matrix G
-G = zeros(P, N);
-G(1, :) = baseFunc(0, N);
-for ii = 1 : (P - 1)
-    G(ii + 1, :) = baseFunc(ii, N) - baseFunc(ii - 1, N);
-end
-
-% X matrix
-X = Phi * G;
-
+[theta, Phi, Kec, theta_u, H, G, X] = GetCoefMat(Ae, Be, Ce, P, N);
 %% start simulation
-% set initial value
+% set initial value, t = -1
 % initial value of predictive state/output variable
-xm_0 = 0;
-ym_0 = 0;
+Xm_neg = 0;
+Ym_neg = 0;
 % initial value of real process state/output variable
-xp_0 = [0; 0];
-yp_0 = 0;
+Xp_neg = [0; 0];
+Yp_neg = 0;
 % initial input u
-u_0 = 0.2;
-
-% storage vector
-Xm = zeros(T, k);
-Xp = repmat({xp_0}, T, k);
-Ym = zeros(T, k);
-Yp = zeros(T, k);
-U = zeros(T, k);
+u_neg = 0;
+% create storage vector
+Xm = zeros(T, iterK);
+Xp = repmat({Xp_neg}, T, iterK);
+Ym = zeros(T, iterK);
+Yp = zeros(T, iterK);
+U = zeros(T, iterK);
 % coefficient matrix
-W = repmat({zeros(N,1)}, T, k);
-%% k = 1, t = 1
+W = repmat({zeros(N,1)}, T, iterK);
+% store predictive control input
+predU = repmat({zeros(P, 1)}, T, iterK);
+%% K = 1, t = 0
 % predictive model
-Xm(1, 1) = Am * xm_0 + Bm * u_0;
-Ym(1, 1) = Cm * Xm(1, 1);
-
+Xm_0 = Am * Xm_neg + Bm * u_neg;
+Ym_0 = Cm * Xm_0;
 % real process model
-Xp{1, 1} = A * xp_0 + B * u_0;
-Yp(1, 1) = C * Xp{1, 1};
-
-delta_xm = Xm(1, 1) - xm_0;
+Xp_0 = A * Xp_neg + B * u_neg;
+Yp_0 = C * Xp_0;
+delta_xm = Xm_0 - Xm_neg;
 et = Ym(1, 1) - Ym(1, 1);
 % extended state vector
 z = [delta_xm; et];
-Z = repmat({z}, T, k);
+Z_0 = z;
+deltaYr_P = GetDeltaYr(P, w, Yp_0, 15);
+mat1 = -inv((X.') * Gamma * X + (G.') * Lambda * G);
+mat2 = (X.') * Gamma * (theta * Z_0 + Kec * deltaYr_P - theta_u * u_neg);
+W{1, 1} = mat1 * mat2;
+u_0 = W{1, 1}(1);
+%% k = 1, t = 1
+% predictive model
+Xm(1, 1) = Am * Xm_0 + Bm * u_0;
+Ym(1, 1) = Cm * Xm(1, 1);
+% real process model
+Xp{1, 1} = A * Xp_0 + B * u_0;
+Yp(1, 1) = C * Xp{1, 1};
+delta_xm = Xm(1, 1) - Xm_0;
+et = Ym(1, 1) - Ym(1, 1);
+% extended state vector
+z = [delta_xm; et];
+Z = repmat({z}, T, iterK);
 Z{1, 1} = z;
 
+% YrVec = GetYr_P(1, w, Yp(1, 1), c(1), P);
+% Yr_P = repmat({YrVec}, T, iterK);
+% deltaYr_P = YrVec - GetYr_P(0, w, Yp(1, 1), c(1), P);
 deltaYr_P = GetDeltaYr(P, w, Yp(1, 1), c(1));
-
-ev = [zeros(size(delta_xm)); et];
-Ek = repmat(ev, P, 1);
-
-Ut = repmat(u_0, P, 1);
-
+% Ut = repmat(u_0, P, 1);
 mat1 = -inv((X.') * Gamma * X + (G.') * Lambda * G);
-mat2 = (X.') * Gamma * (theta * Z{1, 1} + kec * deltaYr_P + Ek - theta_u * u_0) ...
-    - (G.') * Lambda * Ut;
+mat2 = (X.') * Gamma * (theta * Z{1, 1} + Kec * deltaYr_P - theta_u * u_0);
 W{1, 1} = mat1 * mat2;
 
-baseVec = baseFunc(0, N);
-U(1, 1) = baseVec * W{1, 1};
+predU{1, 1} = H * W{1, 1}; 
+U(1, 1) = predU{1, 1}(1, 1);
 
-%% k = 1, t = 2 : T
+% YpVec = GetYp_P(Xp(1, 1), Yp(1, 1), predU(1, 1), P, A, B, C);
+% Yp_P = repmat({YpVec}, T, iterK);
+
+%% K = 1, t = 2 : T
 for t = 2 : T
     % predictive model
     Xm(t, 1) = Am * Xm(t - 1, 1) + Bm * U(t - 1, 1);
@@ -155,19 +127,24 @@ for t = 2 : T
     z = [delta_xm; et];
     Z{t, 1} = z;
 
+%     YrVec = GetYr_P(1, w, Yp(t, 1), c(t), P);
+%     Yr_P{t, 1} = YrVec;
+%     deltaYr_P = YrVec - GetYr_P(0, w, Yp(t, 1), c(t), P);
     deltaYr_P = GetDeltaYr(P, w, Yp(t, 1), c(t));
-
-    ev = [zeros(size(delta_xm)); et];
-    Ek = repmat(ev, P, 1);
-
-    Ut = repmat(U(t - 1, 1), P, 1);
-
-    mat2 = (X.') * Gamma * (theta * Z{t, 1} + kec * deltaYr_P + Ek - theta_u * U(t - 1, 1)) ...
-        - (G.') * Lambda * Ut;
+%     Ut = repmat(U(t - 1, 1), P, 1);
+    mat2 = (X.') * Gamma * (theta * Z{t, 1} + Kec * deltaYr_P - theta_u * U(t - 1, 1));
     W{t, 1} = mat1 * mat2;
-    U(t, 1) = baseVec * W{t, 1};
+    predU{t, 1} = H  * W{t, 1};
+    U(t, 1) = predU{t, 1}(1, 1);
+%     YpVec = GetYp_P(Xp(t, 1), Yp(t, 1), predU(t, 1), P, A, B, C);
+%     Yp_P{t, 1} = YpVec;
 end
-
+%% assessment of performance
+IAE = zeros(iterK, 1);
+for i = 1 : T
+    IAE(1, 1) = IAE(1, 1) + abs(c(i) - Yp(i, 1));
+end
+%% plot
 plot(1 : T, c, 'r');
 hold on;
 plot(1 : T, Yp(:,1),'b-');
