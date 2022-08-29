@@ -141,7 +141,7 @@ Yr_P{1, 1} = Yr_P1;
 Ut = [u_0; zeros(P - 1, 1)];
 
 mat1 = -inv((X.') * Gamma * X + (G.') * Lambda * G);
-mat2 = (X.') * Gamma * (theta * Z{1, 1} + Kec * deltaYr_P - theta_u * u_0 + Ek);
+mat2 = (X.') * Gamma * (theta * Z{1, 1} + Kec * deltaYr_P - theta_u * u_0 - Ek);
 mat3 = (G.') * Lambda * Ut;
 W{1, 1} = mat1 * (mat2 - mat3);
 U(1, 1) = W{1, 1}(1, 1);
@@ -177,7 +177,7 @@ for t = 2 : T
     %Ut(1) = U(t - 1, 1);
     Ut = [U(t - 1, 1); zeros(P - 1, 1)];
 
-    mat2 = (X.') * Gamma * (theta * Z{t, 1} + Kec * deltaYr_P - theta_u * U(t - 1, 1) + Ek);
+    mat2 = (X.') * Gamma * (theta * Z{t, 1} + Kec * deltaYr_P - theta_u * U(t - 1, 1) - Ek);
     mat3 = (G.') * Lambda * Ut;
 
     W{t, 1} = mat1 * (mat2 - mat3);
@@ -247,7 +247,7 @@ for k = 2 : iterK
 
     Ec = GetEc(Y_P(1, 1 : k - 1), Yr_P(1, 1 : k - 1), k);
 
-    mat2 = (X.') * Gamma * (theta * Z{1, k} + Kec * deltaYr_P - theta_u * u_0 + Ek + tao * Ec);
+    mat2 = (X.') * Gamma * (theta * Z{1, k} + Kec * deltaYr_P - theta_u * u_0 - Ek + tao * Ec);
     mat3 = (G.') * Lambda * Ut;
     mat4 = (H.') * Beta * Uk;
     W{1, k} = mat1 * (mat2 -mat3 - mat4);
@@ -285,7 +285,7 @@ for k = 2 : iterK
         Uk = predU{t, k - 1};
 
         Ec = GetEc(Y_P(t, 1 : k - 1), Yr_P(t, 1 : k - 1), k);
-        mat2 = (X.') * Gamma * (theta * Z{t, k} + Kec * deltaYr_P - theta_u * U(t - 1, k) + Ek + tao * Ec);
+        mat2 = (X.') * Gamma * (theta * Z{t, k} + Kec * deltaYr_P - theta_u * U(t - 1, k) - Ek + tao * Ec);
         mat3 = (G.') * Lambda * Ut;
         mat4 = (H.') * Beta * Uk;
         W{t, k} = mat1 * (mat2 -mat3 - mat4);
