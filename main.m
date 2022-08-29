@@ -68,8 +68,17 @@ U = zeros(T, iterK);
 % coefficient matrix
 W = repmat({zeros(N,1)}, T, iterK);
 % store predictive control input
+predU_0 = repmat({zeros(P, 1)}, 1, iterK);
 predU = repmat({zeros(P, 1)}, T, iterK);
 
+Yr_P =  repmat({zeros(P, 1)}, T, iterK);
+Yr_P_0 = repmat({zeros(P, 1)}, 1, iterK);
+
+Y_P =  repmat({zeros(P, 1)}, T, iterK);
+Y_P_0 = repmat({zeros(P, 1)}, 1, iterK);
+
+factorMat = zeros(2 * P, P);
+factorMat(2 : 2 : end, :) = eye(P);
 %% K = 1, t = 0
 % predictive model
 Xm_0 = Am * Xm_neg + Bm * u_neg;
@@ -85,7 +94,11 @@ et = 0;
 z = [delta_xm; et];
 Z_0 = z;
 
-deltaYr_P = GetDeltaYr(P, w, Yp_0, 15);
+Yr_P1 = GetYr_P(1, w, Yp_0, 15, P);
+Yr_P0 = GetYr_P(0, w, Yp_0, 15, P);
+deltaYr_P = Yr_P1 - Yr_P0;
+% deltaYr_P = GetDeltaYr(P, w, Yp_0, 15);
+Yr_P_0{1, 1} = Yr_P1;
 
 Ut = [0; zeros(P - 1, 1)];
 
@@ -94,8 +107,11 @@ mat2 = (X.') * Gamma * (theta * Z_0 + Kec * deltaYr_P - theta_u * u_neg);
 mat3 = (G.') * Lambda * Ut;
 
 W_0 = mat1 * (mat2 - mat3);
-predU_0 = repmat({H * W_0}, iterK, 1);
 u_0 = W_0(1);
+
+predU_0{1, 1} = H * W_0;
+mat = GetY_P(Xp_0, Yp_0, predU_0{1, 1}, P, A, B, C);
+Y_P_0{1, 1} = mat;
 
 %% k = 1, t = 1
 % predictive model
@@ -112,18 +128,28 @@ z = [delta_xm; et];
 Z = repmat({z}, T, iterK);
 Z{1, 1} = z;
 
-deltaYr_P = GetDeltaYr(P, w, Yp(1, 1), c(1));
+ev = Yp(1, 1) - Ym(1, 1);
+Ek = factorMat * repmat(ev, P, 1);
+
+Yr_P1 = GetYr_P(1, w, Yp(1, 1), c(1), P);
+Yr_P0 = GetYr_P(0, w, Yp(1, 1), c(1), P);
+deltaYr_P = Yr_P1 - Yr_P0;
+% deltaYr_P = GetDeltaYr(P, w, Yp_0, 15);
+Yr_P{1, 1} = Yr_P1;
 
 % Ut(1) = u_0;
 Ut = [u_0; zeros(P - 1, 1)];
 
 mat1 = -inv((X.') * Gamma * X + (G.') * Lambda * G);
-mat2 = (X.') * Gamma * (theta * Z{1, 1} + Kec * deltaYr_P - theta_u * u_0);
+mat2 = (X.') * Gamma * (theta * Z{1, 1} + Kec * deltaYr_P - theta_u * u_0 + Ek);
 mat3 = (G.') * Lambda * Ut;
 W{1, 1} = mat1 * (mat2 - mat3);
+U(1, 1) = W{1, 1}(1, 1);
 
 predU{1, 1} = H * W{1, 1};
-U(1, 1) = predU{1, 1}(1, 1);
+mat = GetY_P(Xp{1, 1}, Yp(1, 1), predU{1, 1}, P, A, B, C);
+Y_P{1, 1} = mat;
+
 %% K = 1, t = 2 : T
 for t = 2 : T
     % predictive model
@@ -140,16 +166,26 @@ for t = 2 : T
     z = [delta_xm; et];
     Z{t, 1} = z;
 
-    deltaYr_P = GetDeltaYr(P, w, Yp(t, 1), c(t));
+    ev = Yp(t, 1) - Ym(t, 1);
+    Ek = factorMat * repmat(ev, P, 1);
+
+    Yr_P1 = GetYr_P(1, w, Yp(t, 1), c(t), P);
+    Yr_P0 = GetYr_P(0, w, Yp(t, 1), c(t), P);
+    deltaYr_P = Yr_P1 - Yr_P0;
+    Yr_P{t, 1} = Yr_P1;
+    %deltaYr_P = GetDeltaYr(P, w, Yp(t, 1), c(t));
     %Ut(1) = U(t - 1, 1);
     Ut = [U(t - 1, 1); zeros(P - 1, 1)];
 
-    mat2 = (X.') * Gamma * (theta * Z{t, 1} + Kec * deltaYr_P - theta_u * U(t - 1, 1));
+    mat2 = (X.') * Gamma * (theta * Z{t, 1} + Kec * deltaYr_P - theta_u * U(t - 1, 1) + Ek);
     mat3 = (G.') * Lambda * Ut;
 
     W{t, 1} = mat1 * (mat2 - mat3);
+    U(t, 1) = W{t, 1}(1, 1);
+
     predU{t, 1} = H  * W{t, 1};
-    U(t, 1) = predU{t, 1}(1, 1);
+    mat = GetY_P(Xp{t, 1}, Yp(t, 1), predU{t, 1}, P, A, B, C);
+    Y_P{t, 1} = mat;
 end
 %% assessment of performance: the first circle
 IAE = zeros(iterK, 1);
@@ -168,15 +204,22 @@ IACS(1)
 for k = 2 : iterK
     % t = 0
     deltaYr_P = GetDeltaYr(P, w, Yp_0, 15);
+
     Ut = [0; zeros(P - 1, 1)];
-    Uk = predU_0{k - 1};
-    mat2 = (X.') * Gamma * (theta * Z_0 + Kec * deltaYr_P - theta_u * u_neg);
+    Uk = predU_0{1, k - 1};
+
+    Ec = GetEc(Y_P_0, Yr_P_0, k);
+
+    mat2 = (X.') * Gamma * (theta * Z_0 + Kec * deltaYr_P - theta_u * u_neg + tao * Ec);
     mat3 = (G.') * Lambda * Ut;
     mat4 = (H.') * Beta * Uk;
 
     W_0 = mat1 * (mat2 - mat3- mat4);
-    predU_0{k} = H * W_0;
-    u_0 = predU_0{k}(1);
+    u_0 = W_0(1);
+
+    predU_0{1, k} = H * W_0;
+    mat = GetY_P(Xp_0, Yp_0, predU_0{1, k}, P, A, B, C);
+    Y_P_0{1, k} = mat;
 
     % t = 1
     % predictive model
@@ -190,17 +233,29 @@ for k = 2 : iterK
     % extended state vector
     z = [delta_xm; et];
     Z{1, k} = z;
-    deltaYr_P = GetDeltaYr(P, w, Yp(1, k), c(1));
+
+    ev = Yp(1, k) - Ym(1, k);
+    Ek = factorMat * repmat(ev, P, 1);
+
+    Yr_P1 = GetYr_P(1, w, Yp(1, k), c(1), P);
+    Yr_P0 = GetYr_P(0, w, Yp(1, k), c(1), P);
+    deltaYr_P = Yr_P1 - Yr_P0;
+    Yr_P{1, k} = Yr_P1;
+    %deltaYr_P = GetDeltaYr(P, w, Yp(1, k), c(1));
     Ut = [u_0; zeros(P - 1, 1)];
     Uk = predU{1, k - 1};
 
-    mat2 = (X.') * Gamma * (theta * Z{1, k} + Kec * deltaYr_P - theta_u * u_0);
+    Ec = GetEc(Y_P(1, 1 : k - 1), Yr_P(1, 1 : k - 1), k);
+
+    mat2 = (X.') * Gamma * (theta * Z{1, k} + Kec * deltaYr_P - theta_u * u_0 + Ek + tao * Ec);
     mat3 = (G.') * Lambda * Ut;
     mat4 = (H.') * Beta * Uk;
     W{1, k} = mat1 * (mat2 -mat3 - mat4);
+    U(1, k) = W{1, k}(1, 1);
 
     predU{1, k} = H * W{1, k};
-    U(1, k) = predU{1, k}(1);
+    mat = GetY_P(Xp_0, Yp_0, predU{1, 1}, P, A, B, C);
+    Y_P{1, k} = mat;
 
     for t = 2 : T
         % predictive model
@@ -211,23 +266,34 @@ for k = 2 : iterK
         Xp{t, k} = A * Xp{t - 1, k} + B * U(t - 1, k);
         Yp(t, k) = C * Xp{t, k};
 
+        ev = Yp(t, k) - Ym(t, k);
+        Ek = factorMat * repmat(ev, P, 1);
+
         delta_xm = Xm(t, k) - Xm(t - 1, k);
         et = Ym(t, 1) - Ym(t, 1);
         % extended state vector
         z = [delta_xm; et];
         Z{t, k} = z;
 
-        deltaYr_P = GetDeltaYr(P, w, Yp(t, k), c(t));
+        Yr_P1 = GetYr_P(1, w, Yp(t, k), c(t), P);
+        Yr_P0 = GetYr_P(0, w, Yp(t, k), c(t), P);
+        deltaYr_P = Yr_P1 - Yr_P0;
+        Yr_P{t, k} = Yr_P1;
+        %deltaYr_P = GetDeltaYr(P, w, Yp(t, k), c(t));
 
         Ut = [U(t - 1, k); zeros(P - 1, 1)];
         Uk = predU{t, k - 1};
 
-        mat2 = (X.') * Gamma * (theta * Z{t, k} + Kec * deltaYr_P - theta_u * U(t - 1, k));
+        Ec = GetEc(Y_P(t, 1 : k - 1), Yr_P(t, 1 : k - 1), k);
+        mat2 = (X.') * Gamma * (theta * Z{t, k} + Kec * deltaYr_P - theta_u * U(t - 1, k) + Ek + tao * Ec);
         mat3 = (G.') * Lambda * Ut;
         mat4 = (H.') * Beta * Uk;
         W{t, k} = mat1 * (mat2 -mat3 - mat4);
+        U(t, k) = W{t, k}(1, 1);
+
         predU{t, k} = H  * W{t, k};
-        U(t, k) = predU{t, k}(1);
+        mat = GetY_P(Xp{t, k}, Yp(t, k), predU{t, k}, P, A, B, C);
+        Y_P{t, k} = mat;
     end
 end
 
